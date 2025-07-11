@@ -13,8 +13,7 @@ const initialProductRow = {
 };
 
 function Billing() {
-  const [bills] = useState([{ id: 1, products: [], customer: null }]);
-  const currentBill = bills[0];
+  const [currentBill, setCurrentBill] = useState({ id: 1, products: [], customer: null });
   const [productRow, setProductRow] = useState({ ...initialProductRow });
   const [search, setSearch] = useState('');
   const [selectedPayment, setSelectedPayment] = useState('Cash');
@@ -28,6 +27,10 @@ function Billing() {
   const [quickItems, setQuickItems] = useState([]);
   const [showKeypad, setShowKeypad] = useState(false);
   const [quickItemAdded, setQuickItemAdded] = useState(false);
+  const [activeInput, setActiveInput] = useState(null);
+  const [keypadStandalone, setKeypadStandalone] = useState(false);
+  const [standaloneKeypadValue, setStandaloneKeypadValue] = useState('');
+  const [keypadType, setKeypadType] = useState('numeric');
 
   // Calculate totals
   const totalQty = currentBill.products.reduce((sum, p) => sum + Number(p.qty), 0);
@@ -61,6 +64,22 @@ function Billing() {
     fetchQuickItems();
   }, []);
 
+  // Auto-close keypad on physical keyboard input
+  useEffect(() => {
+    if (!showKeypad || keypadStandalone) return;
+    function handleKeydown(e) {
+      // Ignore if the event is triggered by the virtual keypad (e.isTrusted is always true, but we can check target)
+      // We'll close the keypad for any key press except Tab (to allow navigation)
+      if (e.key !== 'Tab') {
+        setShowKeypad(false);
+        setActiveInput(null);
+        setKeypadStandalone(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeydown);
+    return () => document.removeEventListener('keydown', handleKeydown);
+  }, [showKeypad, keypadStandalone]);
+
   // Client-side search on SEARCH button click
   const handleSearch = () => {
     if (!search.trim()) return;
@@ -88,17 +107,13 @@ function Billing() {
     const total = Number(productRow.amount) * Number(productRow.qty);
     const newProduct = { ...productRow, total };
     const updatedProducts = [...currentBill.products, newProduct];
-    updateBill({ ...currentBill, products: updatedProducts });
+    setCurrentBill({ ...currentBill, products: updatedProducts });
     setProductRow({ ...initialProductRow });
   };
 
   const handleRemoveProduct = (idx) => {
     const updatedProducts = currentBill.products.filter((_, i) => i !== idx);
-    updateBill({ ...currentBill, products: updatedProducts });
-  };
-
-  const updateBill = (updatedBill) => {
-    bills[0] = updatedBill;
+    setCurrentBill({ ...currentBill, products: updatedProducts });
   };
 
   const handleSuggestionClick = (product) => {
@@ -189,6 +204,38 @@ function Billing() {
     }
   };
 
+  // Numeric Keypad component
+  function Keypad({ onInput, onBackspace, onDone, displayValue }) {
+    const keys = [
+      ['7', '8', '9'],
+      ['4', '5', '6'],
+      ['1', '2', '3'],
+      ['0', '.', '⌫']
+    ];
+    return (
+      <div className="w-full flex flex-col items-center gap-2">
+        <div className="mb-2 w-full text-center text-2xl font-mono bg-white border rounded py-2">{displayValue || ' '}</div>
+        {keys.map((row, i) => (
+          <div key={i} className="flex gap-2 w-full">
+            {row.map((key) => (
+              <button
+                key={key}
+                className="flex-1 py-3 bg-gray-200 rounded-lg text-xl font-semibold hover:bg-blue-200 transition"
+                onClick={() => {
+                  if (key === '⌫') onBackspace();
+                  else onInput(key);
+                }}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+        ))}
+        <button className="w-full py-3 mt-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700" onClick={onDone}>Done</button>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
       {/* Main Content */}
@@ -220,6 +267,7 @@ function Billing() {
                     if (search.trim()) {
                       setShowSuggestions(true);
                     }
+                    setShowKeypad(true); setActiveInput('search'); setKeypadType('qwerty'); setKeypadStandalone(false);
                   }}
                 />
             {showSuggestions && (
@@ -259,6 +307,7 @@ function Billing() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter product name"
                   value={productRow.name}
+                  onFocus={() => { setShowKeypad(true); setActiveInput('name'); setKeypadType('qwerty'); setKeypadStandalone(false); }}
                   onChange={e => setProductRow({ ...productRow, name: e.target.value })}
                 />
               </div>
@@ -280,6 +329,7 @@ function Billing() {
               value={productRow.qty}
                     readOnly
                     min="1"
+                    onFocus={() => { setShowKeypad(true); setActiveInput('qty'); setKeypadType('numeric'); setKeypadStandalone(false); }}
                   />
                   <button
                     className="px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-l border-gray-300"
@@ -299,6 +349,8 @@ function Billing() {
                   placeholder="Enter amount"
               type="number"
                   value={productRow.amount}
+                  onFocus={() => { setShowKeypad(true); setActiveInput('amount'); setKeypadType('numeric'); setKeypadStandalone(false); }}
+                  readOnly={showKeypad && activeInput === 'amount'}
                   onChange={e => {
                     const amount = Number(e.target.value) || 0;
                     const pricePerKg = Number(productRow.pricePerKg) || 0;
@@ -314,6 +366,8 @@ function Billing() {
                   placeholder="Weight in kg"
                   type="number"
               value={productRow.weight}
+                  onFocus={() => { setShowKeypad(true); setActiveInput('weight'); setKeypadType('numeric'); setKeypadStandalone(false); }}
+                  readOnly={showKeypad && activeInput === 'weight'}
                   onChange={e => {
                     const weight = Number(e.target.value) || 0;
                     const pricePerKg = Number(productRow.pricePerKg) || 0;
@@ -391,7 +445,7 @@ function Billing() {
                         <span className="font-semibold">₹{product.total}</span>
                         <button 
                           onClick={() => handleRemoveProduct(idx)}
-                          className="text-red-500 hover:text-red-700"
+                          className="text-red-500 hover:text-white hover:bg-red-500 transition-colors duration-200 rounded-full p-1"
                         >
                           🗑️
                         </button>
@@ -436,18 +490,110 @@ function Billing() {
           <div className="p-6 border-b border-gray-200">
             <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-3 mb-2">
-              <button className={`px-4 py-2 rounded-lg font-medium ${showKeypad ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} onClick={() => setShowKeypad(true)}>
+              <button className={`px-4 py-2 rounded-lg font-medium ${showKeypad && keypadStandalone ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} onClick={() => { setShowKeypad(true); setKeypadStandalone(true); setActiveInput(null); }}>
                 Keypad
               </button>
-              <button className={`px-4 py-2 rounded-lg font-medium ${!showKeypad ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} onClick={() => setShowKeypad(false)}>
+              <button className={`px-4 py-2 rounded-lg font-medium ${!showKeypad ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} onClick={() => { setShowKeypad(false); setKeypadStandalone(false); setActiveInput(null); }}>
                 Quick Items
               </button>
             </div>
             {/* Show Keypad or Quick Items */}
-            {showKeypad ? (
-              <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center min-h-[120px]">
-                <div className="text-gray-500">[Keypad coming soon]</div>
-              </div>
+            {showKeypad && (activeInput || keypadStandalone) ? (
+              keypadType === 'qwerty' ? (
+                <Keypad
+                  value={activeInput === 'name' ? productRow.name : search}
+                  onInput={(val) => {
+                    if (activeInput === 'name') {
+                      setProductRow(prev => ({ ...prev, name: (prev.name || '') + val }));
+                    } else if (activeInput === 'search') {
+                      setSearch(prev => prev + val);
+                    }
+                  }}
+                  onBackspace={() => {
+                    if (activeInput === 'name') {
+                      setProductRow(prev => ({ ...prev, name: prev.name.slice(0, -1) }));
+                    } else if (activeInput === 'search') {
+                      setSearch(prev => prev.slice(0, -1));
+                    }
+                  }}
+                  onSpace={() => {
+                    if (activeInput === 'name') {
+                      setProductRow(prev => ({ ...prev, name: (prev.name || '') + ' ' }));
+                    } else if (activeInput === 'search') {
+                      setSearch(prev => prev + ' ');
+                    }
+                  }}
+                  onDone={() => { setShowKeypad(false); setActiveInput(null); setKeypadStandalone(false); }}
+                />
+              ) : (
+                <Keypad
+                  value={keypadStandalone ? standaloneKeypadValue : productRow[activeInput]}
+                  onInput={(val) => {
+                    if (keypadStandalone) {
+                      let newVal = String(standaloneKeypadValue || '');
+                      if (val === '.' && newVal.includes('.')) return;
+                      if (val === '.' && newVal === '') newVal = '0.';
+                      else if (val === '⌫') newVal = newVal.slice(0, -1);
+                      else newVal += val;
+                      setStandaloneKeypadValue(newVal);
+                    } else if (activeInput === 'qty') {
+                      let newVal = String(productRow.qty || '');
+                      if (val === '.') return;
+                      newVal = newVal === '0' ? val : newVal + val;
+                      setProductRow({ ...productRow, qty: Math.max(1, Number(newVal)) });
+                    } else if (activeInput === 'weight') {
+                      let newVal = String(productRow.weight || '');
+                      if (val === '.' && newVal.includes('.')) return;
+                      if (val === '.' && newVal === '') newVal = '0.';
+                      else newVal += val;
+                      // Update amount based on pricePerKg
+                      const pricePerKg = Number(productRow.pricePerKg) || 0;
+                      const weightNum = Number(newVal) || 0;
+                      const amount = pricePerKg ? (weightNum * pricePerKg).toFixed(2) : '';
+                      setProductRow({ ...productRow, weight: newVal, amount });
+                    } else if (activeInput === 'amount') {
+                      let newVal = String(productRow.amount || '');
+                      if (val === '.' && newVal.includes('.')) return;
+                      if (val === '.' && newVal === '') newVal = '0.';
+                      else newVal += val;
+                      // Update weight based on pricePerKg
+                      const pricePerKg = Number(productRow.pricePerKg) || 0;
+                      const amountNum = Number(newVal) || 0;
+                      const weight = pricePerKg ? (amountNum / pricePerKg).toFixed(2) : '';
+                      setProductRow({ ...productRow, amount: newVal, weight });
+                    }
+                  }}
+                  onBackspace={() => {
+                    if (keypadStandalone) {
+                      let newVal = String(standaloneKeypadValue || '');
+                      newVal = newVal.slice(0, -1);
+                      setStandaloneKeypadValue(newVal);
+                    } else if (activeInput === 'qty') {
+                      let newVal = String(productRow.qty || '');
+                      newVal = newVal.slice(0, -1);
+                      setProductRow({ ...productRow, qty: Math.max(1, Number(newVal)) });
+                    } else if (activeInput === 'weight') {
+                      let newVal = String(productRow.weight || '');
+                      newVal = newVal.slice(0, -1);
+                      // Update amount based on pricePerKg
+                      const pricePerKg = Number(productRow.pricePerKg) || 0;
+                      const weightNum = Number(newVal) || 0;
+                      const amount = pricePerKg ? (weightNum * pricePerKg).toFixed(2) : '';
+                      setProductRow({ ...productRow, weight: newVal, amount });
+                    } else if (activeInput === 'amount') {
+                      let newVal = String(productRow.amount || '');
+                      newVal = newVal.slice(0, -1);
+                      // Update weight based on pricePerKg
+                      const pricePerKg = Number(productRow.pricePerKg) || 0;
+                      const amountNum = Number(newVal) || 0;
+                      const weight = pricePerKg ? (amountNum / pricePerKg).toFixed(2) : '';
+                      setProductRow({ ...productRow, amount: newVal, weight });
+                    }
+                  }}
+                  onDone={() => { setShowKeypad(false); setActiveInput(null); setKeypadStandalone(false); setStandaloneKeypadValue(''); }}
+                  displayValue={keypadStandalone ? standaloneKeypadValue : productRow[activeInput]}
+                />
+              )
             ) : (
               <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-60 overflow-y-auto">
                 <div className="flex items-center justify-between mb-2">
@@ -461,7 +607,7 @@ function Billing() {
                       <div className="text-xs text-gray-500">₹{item.pricePerKg} per kg</div>
                     </div>
                     <button
-                      className="ml-2 text-red-500 hover:text-red-700 opacity-70 group-hover:opacity-100"
+                      className="ml-2 text-red-500 hover:text-white hover:bg-red-500 opacity-70 group-hover:opacity-100 transition-colors duration-200 rounded-full p-1"
                       title="Delete"
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -607,7 +753,7 @@ function Billing() {
               onClick={() => {
                 setOrderPaid(null);
                 // Clear current bill's products and reset product form
-                updateBill({ ...currentBill, products: [] });
+                setCurrentBill({ ...currentBill, products: [] });
                 setProductRow({ ...initialProductRow });
               }}
             >
